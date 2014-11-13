@@ -1,0 +1,14 @@
+#!/bin/sh
+
+usage() {
+	echo "$0" "<service>"
+	exit 1
+}
+
+if test $# != 1
+then
+	usage
+fi
+
+spawnd-stop "$1"
+spawnd-start "$1"

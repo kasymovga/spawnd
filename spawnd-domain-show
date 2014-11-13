@@ -1,0 +1,4 @@
+#!/bin/sh
+DOMAIN="$1"
+test -z "$DOMAIN" && DOMAIN=default
+cat /etc/spawnd/domains/"$DOMAIN"

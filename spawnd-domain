@@ -1,0 +1,2 @@
+#!/bin/sh
+spawndctl domain "$1"

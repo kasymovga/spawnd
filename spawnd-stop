@@ -1,0 +1,32 @@
+#!/bin/sh
+
+usage() {
+	echo "$0" "<service>"
+	exit 1
+}
+
+if test $# != 1
+then
+	usage
+fi
+
+echo -n "Stopping $1... "
+RET="`spawndctl stop "$1"`"
+if test "$RET" = "ALREADY"
+then
+	echo Not running
+	exit 0
+fi
+if test "$RET" = "SRVINC" -o "$RET" = "INVCMD"
+then
+	echo Unknown service
+	exit 1
+fi
+if test "$RET" = "OK"
+then
+	while test "`spawndctl status "$1"`" != "OFF"
+	do
+		sleep 1
+	done
+fi
+echo "Ok"

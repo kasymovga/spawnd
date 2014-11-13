@@ -1,0 +1,6 @@
+#!/bin/sh
+SERVICE="$1"
+DOMAIN="$2"
+test -z "$DOMAIN" && DOMAIN=default
+egrep -v "^$SERVICE$" /etc/spawnd/domains/"$DOMAIN" > /etc/spawnd/domains/"$DOMAIN".new
+mv /etc/spawnd/domains/"$DOMAIN".new /etc/spawnd/domains/"$DOMAIN"

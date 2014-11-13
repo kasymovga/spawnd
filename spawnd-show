@@ -1,0 +1,5 @@
+#!/bin/sh
+for S in `spawndctl targets`
+do
+	echo "$S(`spawndctl status "$S"`)"
+done

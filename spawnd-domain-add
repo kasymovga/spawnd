@@ -1,0 +1,10 @@
+#!/bin/sh
+SERVICE="$1"
+DOMAIN="$2"
+test -z "$DOMAIN" && DOMAIN=default
+if egrep -v '^$SERVICE$' /etc/spawnd/domains/"$DOMAIN"
+then
+	echo Already added
+else
+	echo "$SERVICE" >> /etc/spawnd/domains/"$DOMAIN"
+fi

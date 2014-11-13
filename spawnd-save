@@ -1,0 +1,24 @@
+#!/bin/sh
+
+usage() {
+	echo "$0" "[domain]"
+	exit 0
+}
+
+if test $# -gt 1
+then
+	usage
+fi
+
+if test -z "$1"
+then
+	DOMAIN="default"
+else
+	DOMAIN="$1"
+fi
+
+echo -n > /etc/spawnd/domains/"$DOMAIN"
+for S in `spawndctl targets`
+do
+	echo "$S" >> /etc/spawnd/domains/"$DOMAIN"
+done

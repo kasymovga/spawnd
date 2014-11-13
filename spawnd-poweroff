@@ -1,0 +1,2 @@
+#!/bin/sh
+exec spawndctl domain poweroff
