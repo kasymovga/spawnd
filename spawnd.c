@@ -18,6 +18,7 @@
 #include <time.h>
 #include <getopt.h>
 #include <syslog.h>
+#include <mqueue.h>
 #include "misc.h"
 #include "config.h"
 
@@ -75,6 +76,7 @@ int setup_domain_progress;
 int setup_domain;
 int dont_reap_childs;
 int ctl_socket;
+mqd_t mq;
 
 char *memory_log;
 size_t memory_log_length, memory_log_size;
@@ -96,6 +98,7 @@ void fd_to_message(int fd, const char * title);
 
 struct services_list services;
 
+#if 0
 int fd_is_write_ready(int fd, int timeout) {
 	if (fd < 0) return 0;
 	int retval;
@@ -109,6 +112,7 @@ int fd_is_write_ready(int fd, int timeout) {
 	};
 	return 0;
 };
+#endif
 
 int fd_is_read_ready(int fd, int timeout) {
 	if (fd < 0) return 0;
@@ -785,12 +789,18 @@ const char
 	* resp_inv_cmd="INVCMD"
 	;
 
-void usr_handler() {
+void process_message(char *cmd, mqd_t mq_answer) {
+#if 0
 	FILE *in = NULL, *out = NULL;
 	char cmd[1024];
+#endif
 	char *args[4];
 	const char *answer = resp_inv_cmd;
 	char answer_buf[64];
+	struct timespec ts;
+	ts.tv_sec = 0;
+	ts.tv_nsec = 100000000;
+#if 0
 	mkfifo(SPAWND_CONF_PATH"/in", 0600);
 	mkfifo(SPAWND_CONF_PATH"/out", 0600);
 	message(4, "Open "SPAWND_CONF_PATH"/in for reading\n");
@@ -808,14 +818,17 @@ void usr_handler() {
 		message(0, "Can't get data from "SPAWND_CONF_PATH"/in: %s\n", strerror(errno));
 		goto finish;
 	};
+#endif
 
 	cmd_parse(args, cmd);
 
+#if 0
 	message(4, "Open "SPAWND_CONF_PATH"/out for writing\n");
 	if (!(out = fopen(SPAWND_CONF_PATH"/out", "w"))) {
 		message(0, "Can't open "SPAWND_CONF_PATH"/out: %s", strerror(errno));
 		goto finish;
 	};
+#endif
 
 	if (!args[0]) goto finish;
 	if (!strcmp(args[0], "start") && args[1] && !args[2]) {
@@ -913,7 +926,9 @@ void usr_handler() {
 		size_t i;
 		for (i=0;i<services.n;i++) {
 			if (services.i[i]->target_status == SERVICE_ON) {
-				fprintf(out, "%s ", services.i[i]->name);
+				//fprintf(out, "%s ", services.i[i]->name);
+				mq_timedsend(mq_answer, services.i[i]->name,
+						strlen(services.i[i]->name), 0, &ts);
 			};
 		};
 	} else if (!strcmp(args[0], "set_spawn_pid") && args[1] && args[2] && !args[3]) {
@@ -946,20 +961,49 @@ void usr_handler() {
 		kill(-1, SIGKILL);
 	};
 	
+#if 0
 	message(4, "Wait fd is ready to write\n");
 	if (!fd_is_write_ready(fileno(out), 1000)) {
 		message(0, "fd is not ready to write.\n");
 		goto finish;
 	};
+#endif
 	message(4, "Write answer\n");
-	fprintf(out, "%s\n", answer);
+	if (answer && *answer)
+		mq_send(mq_answer, answer, strlen(answer), 0);
+	//fprintf(out, "%s\n", answer);
 finish:
+#if 0
 	message(3, "Close read and write fds\n");
-	//services_process();
+	services_process();
 	if (in) fclose(in);
 	if (out) fclose(out);
+#endif
 
 	return;
+};
+
+#define MQ_BUFFER_SIZE 1024
+void mq_check() {
+	char buffer[MQ_BUFFER_SIZE+1];
+	ssize_t bytes_read = mq_receive(mq, buffer, MQ_BUFFER_SIZE, NULL);
+	if (bytes_read <= 0) return;
+	buffer[bytes_read] = '\0';
+	size_t from_len = strlen(buffer);
+	if (from_len == bytes_read) return;
+	const char *from = buffer;
+	char *message = &buffer[from_len + 1];
+	mqd_t mq_answer = (mqd_t)-1;
+	if ((mq_answer = mq_open(from, 0)) == (mqd_t)-1) goto finish;
+	process_message(message, mq_answer);
+	struct timespec ts;
+	ts.tv_sec = 1;
+	ts.tv_nsec = 0;
+	mq_timedsend(mq_answer, "", 1, 0, &ts);
+finish:
+	if (mq_answer != (mqd_t)-1) {
+		mq_close(mq_answer);
+	};
 };
 
 void signal_handler(int signal) {
@@ -967,7 +1011,7 @@ void signal_handler(int signal) {
 	switch(signal) {
 	case SIGUSR1:
 		message(3, "USR1\n");
-		usr_handler();
+		//usr_handler();
 		break;
 	case SIGALRM:
 		message(3, "ALRM\n");
@@ -986,6 +1030,7 @@ void signal_handler(int signal) {
 		break;
 	};
 	child_handler();
+	mq_check();
 };
 
 void fd_to_message(int fd, const char *title) {
@@ -1105,6 +1150,20 @@ int main(int argc, char **argv) {
 	ign_act.sa_handler = SIG_IGN;
 	ign_act.sa_mask = empty_sigset;
 	ign_act.sa_flags = 0;
+
+	struct mq_attr attr;
+	while ((mq = mq_open("/spawnd", O_CREAT | O_RDONLY | O_NONBLOCK,
+			0600, &attr)) == (mqd_t)-1) {
+		//What should we do?
+		sleep(1);
+	};
+	struct sigevent ev;
+	ev.sigev_notify = SIGEV_SIGNAL;
+	ev.sigev_signo = SIGUSR1;
+	while (mq_notify(mq, &ev) == -1) {
+		//What should we do?
+		sleep(1);
+	};
 
 	sigaction(SIGCHLD, &act, &old_chld_act);
 	sigaction(SIGUSR1, &act, &old_usr1_act);
