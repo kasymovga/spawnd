@@ -970,7 +970,7 @@ void process_message(char *cmd, mqd_t mq_answer) {
 #endif
 	message(4, "Write answer\n");
 	if (answer && *answer)
-		mq_send(mq_answer, answer, strlen(answer), 0);
+		mq_timedsend(mq_answer, answer, strlen(answer), 0, &ts);
 	//fprintf(out, "%s\n", answer);
 finish:
 #if 0
@@ -994,7 +994,7 @@ void mq_check() {
 	const char *from = buffer;
 	char *message = &buffer[from_len + 1];
 	mqd_t mq_answer = (mqd_t)-1;
-	if ((mq_answer = mq_open(from, 0)) == (mqd_t)-1) goto finish;
+	if ((mq_answer = mq_open(from, O_WRONLY)) == (mqd_t)-1) goto finish;
 	process_message(message, mq_answer);
 	struct timespec ts;
 	ts.tv_sec = 1;
@@ -1152,6 +1152,10 @@ int main(int argc, char **argv) {
 	ign_act.sa_flags = 0;
 
 	struct mq_attr attr;
+	attr.mq_flags = 0;
+	attr.mq_maxmsg = 10;
+	attr.mq_msgsize = MQ_BUFFER_SIZE;
+	attr.mq_curmsgs = 0;
 	while ((mq = mq_open("/spawnd", O_CREAT | O_RDONLY | O_NONBLOCK,
 			0600, &attr)) == (mqd_t)-1) {
 		//What should we do?
