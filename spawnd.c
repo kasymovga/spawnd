@@ -21,18 +21,7 @@
 #include <mqueue.h>
 #include "misc.h"
 #include "config.h"
-
-enum service_status {
-	SERVICE_OFF,
-	SERVICE_STOP,
-	SERVICE_POST_STOP,
-	SERVICE_START,
-	SERVICE_POST_START,
-	SERVICE_FAILED,
-	SERVICE_RESTART,
-	SERVICE_POST_RESTART,
-	SERVICE_ON
-};
+#include "common.h"
 
 struct service {
 	int pipe[2];
@@ -49,12 +38,6 @@ struct services_list {
 	struct service **i;
 	size_t n;
 	size_t s;
-};
-
-enum log_type {
-	LOG_TYPE_MEMORY,
-	LOG_TYPE_SYSLOG,
-	LOG_TYPE_NONE
 };
 
 char current_domain[16];
@@ -251,6 +234,8 @@ void reexec() {
 	close_all_pipes();
 	reexec_lock = 1;
 	restore_signals();
+	mq_close(mq);
+	mq_unlink("/spawnd");
 	execl(
 			SPAWND_BINARY, SPAWND_BINARY,
 			debug ? "-d" : "-n",

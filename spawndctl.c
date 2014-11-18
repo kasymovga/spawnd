@@ -10,7 +10,8 @@
 #include <unistd.h>
 #include <mqueue.h>
 #include "config.h"
-#include "misc.h"
+//#include "misc.h"
+#include "common.h"
 
 const char * cmd;
 const char *mq_name;
@@ -74,8 +75,10 @@ finish:
 		printf("%s\n",answer);
 	};
 finish:
-	if (mq != (mqd_t)-1)
+	if (mq != (mqd_t)-1) {
 		mq_close(mq);
+		mq_unlink(answer_queue_name);
+	};
 	if (mq_answer != (mqd_t)-1)
 		mq_close(mq);
 	return ret;
