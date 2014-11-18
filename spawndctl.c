@@ -8,11 +8,12 @@
 #include <signal.h>
 #include <errno.h>
 #include <unistd.h>
+#include <mqueue.h>
 #include "config.h"
 #include "misc.h"
 
 const char * cmd;
-pid_t spawnd_pid;
+const char *mq_name;
 
 void usage() {
 	printf(
@@ -20,7 +21,9 @@ void usage() {
 			,cmd);
 };
 
-char *spawndctl(int argc, char **argv) {
+int spawndctl(int argc, char **argv) {
+	int ret = -1;
+#if 0
 	char *ret = NULL;
 	FILE *in = NULL, *out = NULL;
 	int i;
@@ -45,19 +48,49 @@ char *spawndctl(int argc, char **argv) {
 finish:
 	if (in) fclose(in);
 	if (out) fclose(out);
+#endif
+	mqd_t mq = (mqd_t)-1, mq_answer = (mqd_t)-1;
+	if ((mq = mq_open(mq_name, 0)) == (mqd_t)-1) goto finish;
+	char answer_queue_name[128];
+	snprintf(answer_queue_name, 128, "/spawndctl%li", (long int)getpid());
+	struct mq_attr attr;
+	attr.mq_flags = 0;
+	attr.mq_maxmsg = 10;
+	attr.mq_msgsize = 1024;
+	attr.mq_curmsgs = 0;
+	mq_answer = mq_open(answer_queue_name, O_CREAT | O_EXCL | O_RDONLY, 0600,
+			&attr);
+	if (mq_answer == (mqd_t)-1) goto finish;
+#define BUFFER_SIZE 1024
+	char answer[BUFFER_SIZE + 1];
+	ssize_t readed;
+	while ((readed = mq_receive(mq_answer, answer, BUFFER_SIZE, NULL)) !=
+			(mqd_t)-1) {
+		answer[readed] = '\0';
+		if (!*answer) {
+			ret = 0;
+			break;
+		};
+		printf("%s\n",answer);
+	};
+finish:
+	if (mq != (mqd_t)-1)
+		mq_close(mq);
+	if (mq_answer != (mqd_t)-1)
+		mq_close(mq);
 	return ret;
 };
 
 int main( int argc, char **argv ) {
 	char *answer = NULL;
-	spawnd_pid = 1;
+	mq_name = "/spawnd";
 	int ret = EXIT_FAILURE;
 	cmd = (argc && argv[0]) ? argv[0] : "wtf?";
 	int opt;
-	while ((opt = getopt(argc,argv,"p:")) != -1) {
+	while ((opt = getopt(argc,argv,"m:")) != -1) {
 		switch(opt) {
-		case 'p':
-			spawnd_pid = atol(optarg);
+		case 'm':
+			mq_name = optarg;
 			break;
 		default:
 			usage();
@@ -72,11 +105,10 @@ int main( int argc, char **argv ) {
 		usage();
 		goto finish;
 	} else {
-		if(!(answer = spawndctl(real_argc, real_argv))) {
+		if(spawndctl(real_argc, real_argv)) {
 			fprintf(stderr, "%s: %s\n", cmd, strerror(errno));
 			goto finish;
 		};
-		printf("%s\n",answer);
 	};
 	ret = EXIT_SUCCESS;
 finish:
