@@ -18,7 +18,10 @@ else
 fi
 
 echo -n > /etc/spawnd/domains/"$DOMAIN"
-for S in `spawndctl targets`
+spawndctl status | while read L
 do
-	echo "$S" >> /etc/spawnd/domains/"$DOMAIN"
+	SERVICE="`echo "$L" | cut -f 1 -d '/'`"
+	TARGET_STATUS="`echo "$L" | cut -f 3 -d '/'`"
+	test "$TARGET_STATUS" != "ON" && continue
+	echo "$SERVICE" >> /etc/spawnd/domains/"$DOMAIN"
 done
