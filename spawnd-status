@@ -5,21 +5,14 @@ usage() {
 	exit 1
 }
 
-if test $# != 1
+if test $# -gt 1
 then
 	usage
 fi
 
-RET="`spawndctl status "$1"`"
-if test "$RET" = "SRVINC" -o "$RET" = "INVCMD"
+if test $# -gt 1
 then
-	echo Unknown service
-	exit 1
-fi
-echo $RET
-if test "$RET" = "ON"
-then
-	exit 0
+	spawndctl status "$1"
 else
-	exit 1
+	spawndctl status
 fi

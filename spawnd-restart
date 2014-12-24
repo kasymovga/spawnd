@@ -10,5 +10,7 @@ then
 	usage
 fi
 
+echo Stop "$1"
 spawnd-stop "$1"
+echo Start "$1"
 spawnd-start "$1"

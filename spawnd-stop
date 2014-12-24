@@ -11,22 +11,14 @@ then
 fi
 
 echo -n "Stopping $1... "
-RET="`spawndctl stop "$1"`"
-if test "$RET" = "ALREADY"
+if spawndctl stop "$1"
 then
-	echo Not running
-	exit 0
-fi
-if test "$RET" = "SRVINC" -o "$RET" = "INVCMD"
-then
-	echo Unknown service
-	exit 1
-fi
-if test "$RET" = "OK"
-then
-	while test "`spawndctl status "$1"`" != "OFF"
+	while true
 	do
-		sleep 1
+		STATUS="`spawndctl status "$1" | cut -d '/' -f 2`"
+		test "$STATUS" == OFF && break
 	done
+	echo Done
+else
+	echo Failed
 fi
-echo "Ok"

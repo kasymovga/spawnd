@@ -5,6 +5,7 @@ LDFLAGS=
 COMP_CFLAGS=$(CFLAGS) -std=c99 -Wall
 LINK_LDFLAGS=$(LDFLAGS)
 SPAWND_LDFLAGS=-lrt
+SPAWNDCTL_LDFLAGS=-lrt
 COMP=$(CC) $(COMP_CFLAGS) -c -o
 LINK=$(LD) $(LINK_LDFLAGS) -o
 LOGWTMP_LDFALGS=-lutil
@@ -26,7 +27,7 @@ spawnd : spawnd.o misc.o
 	$(LINK) $@ $(SPAWND_LDFLAGS) $^
 
 spawndctl : spawndctl.o misc.o
-	$(LINK) $@ $^
+	$(LINK) $@ $(SPAWNDCTL_LDFLAGS) $^
 
 spawnd-helper-killall : killthemall.o
 	$(LINK) $@ $^
@@ -43,16 +44,16 @@ killthemall.o : killthemall.c Makefile
 utmplogout.o : utmplogout.c Makefile
 	$(COMP) $@ $<
 
-spawnd.o : spawnd.c misc.h config.h Makefile
+spawnd.o : spawnd.c misc.h config.h common.h ipc.h Makefile
 	$(COMP) $@ $<
 
-spawndctl.o : spawndctl.c config.h Makefile
+spawndctl.o : spawndctl.c config.h common.h ipc.h Makefile
 	$(COMP) $@ $<
 
 misc.o : misc.c misc.h Makefile
 	$(COMP) $@ $<
 
-logwtmp.o : logwtmp.c
+logwtmp.o : logwtmp.c Makefile
 	$(COMP) $@ $<
 
 .PHONY : clean tarball install
@@ -62,7 +63,7 @@ clean:
 
 tarball: $(TARBALL)
 
-$(TARBALL) : $(SCRIPTS) config.h spawnd.c spawndctl.c misc.h misc.c killthemall.c logwtmp.c utmplogout.c Makefile AUTHORS COPYING
+$(TARBALL) : $(SCRIPTS) common.h ipc.h config.h spawnd.c spawndctl.c misc.h misc.c killthemall.c logwtmp.c utmplogout.c Makefile AUTHORS COPYING
 	rm -rf $(NAME)-$(VERSION)
 	mkdir -m 755 $(NAME)-$(VERSION)
 	cp $^ $(NAME)-$(VERSION)/

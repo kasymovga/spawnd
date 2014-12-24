@@ -1,6 +1,5 @@
 #define _BSD_SOURCE
 #define _XOPEN_SOURCE 600
-#define SERVICE_NAME_MAX_LEN 128
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -21,7 +20,7 @@
 #include <mqueue.h>
 #include "misc.h"
 #include "config.h"
-#include "common.h"
+#include "ipc.h"
 
 struct service {
 	int pipe[2];
@@ -40,7 +39,7 @@ struct services_list {
 	size_t s;
 };
 
-char current_domain[16];
+char current_domain[DOMAIN_NAME_MAX_LEN];
 
 pid_t self_pid;
 int respawn_interval;
@@ -80,22 +79,6 @@ void services_process();
 void fd_to_message(int fd, const char * title);
 
 struct services_list services;
-
-#if 0
-int fd_is_write_ready(int fd, int timeout) {
-	if (fd < 0) return 0;
-	int retval;
-
-	struct pollfd fds;
-	fds.fd = fd;
-	fds.events = POLLOUT;
-	retval = poll(&fds, 1, timeout);
-	if (retval > 0) {
-		return 1;
-	};
-	return 0;
-};
-#endif
 
 int fd_is_read_ready(int fd, int timeout) {
 	if (fd < 0) return 0;
@@ -235,7 +218,6 @@ void reexec() {
 	reexec_lock = 1;
 	restore_signals();
 	mq_close(mq);
-	mq_unlink("/spawnd");
 	execl(
 			SPAWND_BINARY, SPAWND_BINARY,
 			debug ? "-d" : "-n",
@@ -255,7 +237,7 @@ void debug_message_v(const char *fmt, va_list va) {
 	if (!out) return;
 	fprintf(out, "SPAWND: ");
 	vfprintf(out, fmt, va);
-	//fprintf(out, "\n");
+	fflush(out);
 	fclose(out);
 };
 
@@ -396,12 +378,11 @@ struct service *services_find(const char *name) {
 };
 
 int service_correct(const char *name) {
-	if (strlen(name)>SERVICE_NAME_MAX_LEN) return 0;
+	if (strlen(name) > SERVICE_NAME_MAX_LEN - 1) return 0;
 	if (strchr(name, '/') ||
-			strchr(name, '.') ||
+			name[0] == '.' ||
 			strchr(name, '*') ||
-			strchr(name, '\t') ||
-			strchr(name, ' ')
+			strchr(name, '\n')
 		) return 0;
 	struct stat st;
 	char service_path[1024];
@@ -423,14 +404,17 @@ int services_add(const char *name) {
 		goto finish;
 	};
 	if (services.n + 1 > services.s) {
-		if (!(new_i = realloc(services.i, sizeof(struct service *) * (services.s + 1)))) goto finish;
+		if (!(new_i = realloc(services.i, sizeof(struct service *) * (services.s + 1)))) {
+			message(0, "service_add: %s\n", strerror(errno));
+			goto finish;
+		};
 		services.s++;
 		services.i = new_i;
 	};
 	services.i[services.n] = service;
 	service = NULL;
 	services.n++;
-	ret=1;
+	ret = 1;
 finish:
 	service_free(service);
 	return ret;
@@ -445,30 +429,25 @@ int service_depend_of(struct service *service, const char *name) {
 	return 0;
 };
 
-int services_set(const char *name, enum service_status status) {
-	//printf("services_set %s\n", name);
-	/*if (status!=SERVICE_ON && status!=SERVICE_OFF) return -1;*/
-	struct service *service = services_find(name);
-	if (!service) return -1;
-	if (service->target_status == status) return 0;
-	service->target_status = status;
-	return 1;
-};
-
-//int services_del(const char *name) {
-//	return -1;
-//};
-
 int services_set_domain(const char *domain_name) {
-	if (strlen(domain_name) > SERVICE_NAME_MAX_LEN) return -1;
-	snprintf(current_domain, 16, "%s", domain_name);
+	if (strlen(domain_name) > DOMAIN_NAME_MAX_LEN - 1) {
+		message(0, "Domain set: domain name too long\n");
+		return -1;
+	};
+	if (strchr(domain_name, '/') ||
+			domain_name[0] == '.' ||
+			strchr(domain_name, '\n')
+		) return -1;
+	snprintf(current_domain, DOMAIN_NAME_MAX_LEN, "%s", domain_name);
 	char **targets = NULL;
 	char **target;
-	char domain_path[1024];
+	size_t domain_path_len = strlen(SPAWND_CONF_PATH) + DOMAIN_NAME_MAX_LEN  + 10;
+	char domain_path[domain_path_len];
 	size_t i;
 	int ret = -1;
-	snprintf(domain_path, 1024, "%s/domains/%s", SPAWND_CONF_PATH, domain_name);
+	snprintf(domain_path, domain_path_len, "%s/domains/%s", SPAWND_CONF_PATH, domain_name);
 	if (!(targets = file_lines(domain_path))) {
+		message(0, "domain_set: %s: %s\n", domain_path, strerror(errno));
 		goto finish;
 	};
 	for (target = targets; *target; target++) {
@@ -477,11 +456,9 @@ int services_set_domain(const char *domain_name) {
 	};
 	for (i = 0; i < services.n; i++) {
 		services.i[i]->target_status = SERVICE_OFF;
-	};
-	for (i = 0; i < services.n; i++) {
 		for (target = targets;*target;target++) {
 			if (!strcmp(*target, services.i[i]->name)) {
-				services_set(*target, SERVICE_ON);
+				services.i[i]->target_status = SERVICE_ON;
 			};
 		};
 	};
@@ -741,199 +718,101 @@ continue_1:;
 	return;
 };
 
-void cmd_parse(char **args, char *cmd) {
-	char *pp = cmd;
-	char *arg;
-	int argc = 0;
-	while (argc<3) {
-		while (*pp && *pp == ' ') pp++;
-		arg = pp;
-		while (*pp) {
-			if (*pp == ' ' || *pp == '\n') {
-				*pp = '\0';
-				pp++;
-				break;
-			};
-			pp++;
-		};
-		if (*arg) {
-			args[argc] = arg;
-			argc++;
-		};
-		if (!*pp) break;
-
-	};
-	args[argc] = NULL;
-};
-
-const char
-	* resp_ok="OK",
-	* resp_error="ERROR",
-	* resp_incorrect_service="SRVINC",
-	* resp_already="ALREADY",
-	* resp_inv_cmd="INVCMD"
-	;
-
-void process_message(char *cmd, mqd_t mq_answer) {
-#if 0
-	FILE *in = NULL, *out = NULL;
-	char cmd[1024];
-#endif
-	char *args[4];
-	const char *answer = resp_inv_cmd;
-	char answer_buf[64];
+void response(mqd_t mq_answer, struct response *resp) {
 	struct timespec ts;
 	ts.tv_sec = 0;
 	ts.tv_nsec = 100000000;
-#if 0
-	mkfifo(SPAWND_CONF_PATH"/in", 0600);
-	mkfifo(SPAWND_CONF_PATH"/out", 0600);
-	message(4, "Open "SPAWND_CONF_PATH"/in for reading\n");
-	if (!(in = fopen(SPAWND_CONF_PATH"/in", "r"))) {
-		message(0, "Can't open "SPAWND_CONF_PATH"/in: %s\n", strerror(errno));
-		goto finish;
-	};
-	message(4, "Wait for fd is read ready\n");
-	if (!fd_is_read_ready(fileno(in), 1000)) {
-		message(0, "Wait read-ready timeout\n");
-		goto finish;
-	};
-	message(4, "Read command\n");
-	if (!fgets(cmd, 1024, in)) {
-		message(0, "Can't get data from "SPAWND_CONF_PATH"/in: %s\n", strerror(errno));
-		goto finish;
-	};
-#endif
+	mq_timedsend(mq_answer, (void*)resp, sizeof(struct response), 0, &ts);
+};
 
-	cmd_parse(args, cmd);
-
-#if 0
-	message(4, "Open "SPAWND_CONF_PATH"/out for writing\n");
-	if (!(out = fopen(SPAWND_CONF_PATH"/out", "w"))) {
-		message(0, "Can't open "SPAWND_CONF_PATH"/out: %s", strerror(errno));
-		goto finish;
-	};
-#endif
-
-	if (!args[0]) goto finish;
-	if (!strcmp(args[0], "start") && args[1] && !args[2]) {
-		int set_ret;
-		if (!service_correct(args[1])) {
-			answer = resp_incorrect_service;
-		} else if (services_add(args[1])<0) {
-			answer = resp_error;
-		} else if ((set_ret = services_set(args[1], SERVICE_ON))>0) {
-			answer = resp_ok;
-		} else if (!set_ret) {
-			answer = resp_already;
-		} else {
-			answer = resp_error;
+void request(struct request *req, mqd_t mq_answer) {
+#define ERROR_RESPONSE(x) response(mq_answer, &((struct response) { \
+	.type = RESPONSE_TYPE_ERROR, \
+	.u.error.description = x \
+	}));
+	struct response resp;
+	struct service *service;
+	switch (req->type) {
+	case REQUEST_TYPE_DOMAIN_SET:
+		services_set_domain(req->u.domain.name);
+		break;
+	case REQUEST_TYPE_SERVICE_SET:
+		if (!service_correct(req->u.service.name)) {
+			ERROR_RESPONSE("Incorrect service name");
+			goto finish;
 		};
-	} else if (!strcmp(args[0], "stop") && args[1] && !args[2]) {
-		int set_ret;
-		if ((set_ret = services_set(args[1], SERVICE_OFF)) > 0) {
-			answer = resp_ok;
-		} else if (!set_ret) {
-			answer = resp_already;
-		} else {
-			answer = resp_incorrect_service;
+		if (services_add(req->u.service.name)) {
+			ERROR_RESPONSE("Internal spawnd error, check log");
+			goto finish;
 		};
-	} else if (!strcmp(args[0], "pid") && args[1] && !args[2]) {
-		struct service *service = services_find(args[1]);
-		if (service && service->status == SERVICE_ON) {
-			snprintf(answer_buf, 64, "%li", (long int)service->spawn_pid);
-			answer = answer_buf;
-		} else {
-			answer = resp_incorrect_service;
+		service = services_find(req->u.service.name);
+		if (!service) {
+			ERROR_RESPONSE("Internal spawnd error, check log");
+			goto finish;
 		};
-	} else if (!strcmp(args[0], "kill") && args[1] && args[2] && !args[3]) {
-		struct service *service = services_find(args[1]);
-		if (service && service->status == SERVICE_ON) {
-			int sig_num = atoi(args[2]);
-			kill(service->spawn_pid, sig_num);
-			answer = resp_ok;
-		} else {
-			answer = resp_incorrect_service;
+		if (req->u.service.target_status == SERVICE_ON || req->u.service.target_status == SERVICE_OFF) {
+			service->target_status = req->u.service.target_status;
+			goto finish;
 		};
-	} else if (!strcmp(args[0], "domain") && args[1] && !args[2]) {
-		if (services_set_domain(args[1])) {
-			answer = resp_error;
-		} else {
-			answer = resp_ok;
+		if (req->u.service.spawn_pid) {
+			service->spawn_pid = req->u.service.spawn_pid;
+			goto finish;
 		};
-	} else if (!strcmp(args[0], "status") && args[1] && !args[2]) {
-		struct service *service = services_find(args[1]);
-		if (service) {
-			if (service->status == SERVICE_ON) {
-				answer = "ON";
-			} else if (service->status == SERVICE_OFF) {
-				answer = "OFF";
-			} else if (service->status == SERVICE_START) {
-				answer = "START";
-			} else if (service->status == SERVICE_POST_START) {
-				answer = "POST_START";
-			} else if (service->status == SERVICE_STOP) {
-				answer = "STOP";
-			} else if (service->status == SERVICE_POST_STOP) {
-				answer = "POST_STOP";
+		break;
+	case REQUEST_TYPE_DOMAIN_GET:
+		resp.type = RESPONSE_TYPE_DOMAIN;
+		snprintf(resp.u.domain.name, DOMAIN_NAME_MAX_LEN, "%s", current_domain);
+		resp.u.domain.setup = setup_domain;
+		response(mq_answer, &resp);
+		break;
+	case REQUEST_TYPE_SERVICE_GET:
+		if (req->u.service.name[0] == '\0') {
+			for (size_t ii = 0; ii < services.n; ii++) {
+				if (services.i[ii]->status == SERVICE_OFF && services.i[ii]->target_status == SERVICE_OFF) continue;
+				resp.type = RESPONSE_TYPE_SERVICE;
+				snprintf(resp.u.service.name, SERVICE_NAME_MAX_LEN, "%s", services.i[ii]->name);
+				resp.u.service.status = services.i[ii]->status;
+				resp.u.service.target_status = services.i[ii]->target_status;
+				resp.u.service.spawn_pid = services.i[ii]->spawn_pid;
+				response(mq_answer, &resp);
 			};
-		} else {
-			if (service_correct(args[1])) {
-				answer = "OFF";
-			} else {
-				answer = resp_incorrect_service;
-			};
+			goto finish;
 		};
-	} else if (!strcmp(args[0], "debug") && args[1] && !args[2]) {
-		debug = atoi(args[1]);
-		answer = resp_ok;
-	} else if (!strcmp(args[0], "log") && args[1] && !args[2]) {
-		if (!strcmp(args[1], "syslog")) {
-			log_type = LOG_TYPE_SYSLOG;
-			message(0, "Redirect log to syslog\n");
+		if (!service_correct(req->u.service.name)) {
+			ERROR_RESPONSE("Incorrect service name");
+			goto finish;
+		};
+		service = services_find(req->u.service.name);
+		if (!service) {
+			ERROR_RESPONSE("Service not found");
+			goto finish;
+		};
+		resp.type = RESPONSE_TYPE_SERVICE;
+		snprintf(resp.u.service.name, SERVICE_NAME_MAX_LEN, "%s", service->name);
+		resp.u.service.status = service->status;
+		resp.u.service.target_status = service->target_status;
+		resp.u.service.spawn_pid = service->spawn_pid;
+		response(mq_answer, &resp);
+		break;
+	case REQUEST_TYPE_SPAWND_SET:
+		switch (req->u.spawnd.log_type) {
+		case LOG_TYPE_SYSLOG:
+		case LOG_TYPE_MEMORY:
+		case LOG_TYPE_NONE:
+			log_type = req->u.spawnd.log_type;
 			memory_log_to_log();
-			answer = resp_ok;
-		} else if (!strcmp(args[1], "memory")) {
-			log_type = LOG_TYPE_MEMORY;
-			message(0, "Redirect log to memory\n");
-			answer = resp_ok;
-		} else if (!strcmp(args[1], "none")) {
-			log_type = LOG_TYPE_NONE;
-			message(0, "Redirect log to nowhere\n");
-			memory_log_to_log();
-			answer = resp_ok;
+			message(0, "Redirect log to %s\n",
+					log_type == LOG_TYPE_SYSLOG ? "syslog" :
+					(log_type == LOG_TYPE_MEMORY ? "memory" : "nowhere"));
+		default:
+			break;
 		};
-	} else if (!strcmp(args[0], "verbose_level") && args[1] && !args[2]) {
-		verbose_level = atoi(args[1]);
-		answer = resp_ok;
-	} else if (!strcmp(args[0], "targets") && !args[1]) {
-		answer="";
-		size_t i;
-		for (i=0;i<services.n;i++) {
-			if (services.i[i]->target_status == SERVICE_ON) {
-				//fprintf(out, "%s ", services.i[i]->name);
-				mq_timedsend(mq_answer, services.i[i]->name,
-						strlen(services.i[i]->name), 0, &ts);
-			};
-		};
-	} else if (!strcmp(args[0], "set_spawn_pid") && args[1] && args[2] && !args[3]) {
-		struct service *service = services_find(args[1]);
-		if (service && service->target_status == SERVICE_ON && (service->status == SERVICE_START || service->status == SERVICE_RESTART)) {
-			pid_t new_spawn_pid = atol(args[2]);
-			if (new_spawn_pid > 0) {
-				service->spawn_pid = new_spawn_pid;
-				service->spawn_term_time = 0;
-				answer = resp_ok;
-			} else {
-				answer = resp_inv_cmd;
-			};
-		} else {
-			answer = resp_incorrect_service;
-		};
-	} else if (!strcmp(args[0], "killall") && !args[2]) {
-		answer = resp_ok;
-		int pause = 3;
-		if (args[1]) pause = atoi(args[1]);
+		if (req->u.spawnd.debug >= 0) debug = req->u.spawnd.debug;
+		if (req->u.spawnd.verbose_level >= 0) verbose_level = req->u.spawnd.verbose_level;
+		break;
+	case REQUEST_TYPE_KILLALL:
+		;
+		int pause = req->u.killall.pause;
 		if (pause > 10) {
 			pause = 10;
 		} else if (pause < 0) {
@@ -944,51 +823,73 @@ void process_message(char *cmd, mqd_t mq_answer) {
 		kill(-1, SIGINT);
 		sleep(pause);
 		kill(-1, SIGKILL);
+	case REQUEST_TYPE_KILL:
+		if (!service_correct(req->u.kill.service_name)) {
+			ERROR_RESPONSE("Incorrect service name");
+			goto finish;
+		};
+		service = services_find(req->u.kill.service_name);
+		if (!service) {
+			ERROR_RESPONSE("Service not found");
+			goto finish;
+		};
+		if (service->spawn_pid > 0) {
+			kill(service->spawn_pid, req->u.kill.signal);
+		};
+		break;
+	default:
+		response(mq_answer, &((struct response) {
+				.type = RESPONSE_TYPE_ERROR,
+				.u.error.description = "Unknown request type"
+				}));
+		break;
 	};
-	
-#if 0
-	message(4, "Wait fd is ready to write\n");
-	if (!fd_is_write_ready(fileno(out), 1000)) {
-		message(0, "fd is not ready to write.\n");
-		goto finish;
-	};
-#endif
-	message(4, "Write answer\n");
-	if (answer && *answer)
-		mq_timedsend(mq_answer, answer, strlen(answer), 0, &ts);
-	//fprintf(out, "%s\n", answer);
+
 finish:
-#if 0
-	message(3, "Close read and write fds\n");
-	services_process();
-	if (in) fclose(in);
-	if (out) fclose(out);
-#endif
 
 	return;
+#undef ERROR_RESPONSE
 };
 
-#define MQ_BUFFER_SIZE 1024
 void mq_check() {
-	char buffer[MQ_BUFFER_SIZE+1];
-	ssize_t bytes_read = mq_receive(mq, buffer, MQ_BUFFER_SIZE, NULL);
-	if (bytes_read <= 0) return;
-	buffer[bytes_read] = '\0';
-	size_t from_len = strlen(buffer);
-	if (from_len == bytes_read) return;
-	const char *from = buffer;
-	char *message = &buffer[from_len + 1];
-	mqd_t mq_answer = (mqd_t)-1;
-	if ((mq_answer = mq_open(from, O_WRONLY)) == (mqd_t)-1) goto finish;
-	process_message(message, mq_answer);
-	struct timespec ts;
-	ts.tv_sec = 1;
-	ts.tv_nsec = 0;
-	mq_timedsend(mq_answer, "", 1, 0, &ts);
-finish:
-	if (mq_answer != (mqd_t)-1) {
-		mq_close(mq_answer);
+	message(4, "Check message queue\n");
+	struct request req;
+	ssize_t bytes_read;
+	while ((bytes_read = mq_receive(mq, (void*)&req, sizeof(struct request), NULL)) > 0) {
+		message(4, "Get message\n");
+		mqd_t mq_resp = (mqd_t)-1;
+		if (bytes_read < 0) {
+			message(0, "mq_receive: %s", strerror(errno));
+			goto next;
+		};
+		if (bytes_read != sizeof(struct request)) {
+			message(0, "Incorrect request", strerror(errno));
+			goto next;
+		};
+		req.end = '\0'; //Just in case
+		req.callback_mq_name[sizeof(req.callback_mq_name) - 1] = '\0';
+		if (strncmp(req.callback_mq_name, "/spawndctl", 10)) {
+			message(0, "Incorrect queue name in request");
+			goto next;
+		};
+		if ((mq_resp = mq_open(req.callback_mq_name, O_WRONLY)) == (mqd_t)-1) {
+			message(0, "mq_open: %s :%s", req.callback_mq_name, strerror(errno));
+			goto next;
+		};
+		request((void*)&req, mq_resp);
+		struct response response_end;
+		response_end.type = RESPONSE_TYPE_END;
+		response(mq_resp, (void*)&response_end);
+next:
+		mq_unlink(req.callback_mq_name);
+		if (mq_resp != (mqd_t)-1) {
+			mq_close(mq_resp);
+		};
 	};
+	struct sigevent ev;
+	ev.sigev_notify = SIGEV_SIGNAL;
+	ev.sigev_signo = SIGUSR1;
+	mq_notify(mq, &ev);
 };
 
 void signal_handler(int signal) {
@@ -1014,8 +915,8 @@ void signal_handler(int signal) {
 		message(3, "CHLD\n");
 		break;
 	};
-	child_handler();
 	mq_check();
+	child_handler();
 };
 
 void fd_to_message(int fd, const char *title) {
@@ -1139,9 +1040,10 @@ int main(int argc, char **argv) {
 	struct mq_attr attr;
 	attr.mq_flags = 0;
 	attr.mq_maxmsg = 10;
-	attr.mq_msgsize = MQ_BUFFER_SIZE;
+	attr.mq_msgsize = sizeof(struct request);
 	attr.mq_curmsgs = 0;
-	while ((mq = mq_open("/spawnd", O_CREAT | O_RDONLY | O_NONBLOCK,
+	mq_unlink(MQ_SPAWND_NAME);
+	while ((mq = mq_open(MQ_SPAWND_NAME, O_CREAT | O_RDONLY | O_NONBLOCK | O_EXCL,
 			0600, &attr)) == (mqd_t)-1) {
 		//What should we do?
 		sleep(1);
