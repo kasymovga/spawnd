@@ -720,8 +720,8 @@ continue_1:;
 
 void response(mqd_t mq_answer, struct response *resp) {
 	struct timespec ts;
-	ts.tv_sec = 0;
-	ts.tv_nsec = 100000000;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	ts.tv_sec += 1;
 	mq_timedsend(mq_answer, (void*)resp, sizeof(struct response), 0, &ts);
 };
 
