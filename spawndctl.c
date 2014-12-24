@@ -102,6 +102,7 @@ int spawndctl(struct request *req) {
 		case RESPONSE_TYPE_ERROR:
 			printf("Error: %s\n", resp.u.error.description);
 			error_status = -1;
+			errormsg = "Spawnd return error.";
 			break;
 		default:
 			printf("Unknown response type\n");
