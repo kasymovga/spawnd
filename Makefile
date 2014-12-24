@@ -17,7 +17,7 @@ DESTDIR?=
 
 SBINS=spawnd spawnd-helper-killall spawnd-helper-logwtmp spawnd-helper-utmplogout
 BINS=spawndctl
-SCRIPTS=spawnd-start spawnd-stop spawnd-restart spawnd-status spawnd-save spawnd-show spawnd-reboot spawnd-halt spawnd-poweroff spawnd-domain spawnd-domain-show spawnd-domain-add spawnd-domain-delete
+SCRIPTS=spawnd-start spawnd-stop spawnd-restart spawnd-status spawnd-save spawnd-reboot spawnd-halt spawnd-poweroff spawnd-domain spawnd-domain-show spawnd-domain-add spawnd-domain-delete
 
 .PHONY : all
 
