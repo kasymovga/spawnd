@@ -741,7 +741,7 @@ void request(struct request *req, mqd_t mq_answer) {
 			ERROR_RESPONSE("Incorrect service name");
 			goto finish;
 		};
-		if (services_add(req->u.service.name)) {
+		if (services_add(req->u.service.name) < 0) {
 			ERROR_RESPONSE("Internal spawnd error, check log");
 			goto finish;
 		};
