@@ -10,7 +10,7 @@ COMP=$(CC) $(COMP_CFLAGS) -c -o
 LINK=$(LD) $(LINK_LDFLAGS) -o
 LOGWTMP_LDFALGS=-lutil
 NAME=spawnd
-VERSION=2013.08.01
+VERSION?=git
 TARGET=$(NAME)
 TARBALL=$(NAME)-$(VERSION).tar.gz
 DESTDIR?=
@@ -59,7 +59,7 @@ logwtmp.o : logwtmp.c Makefile
 .PHONY : clean tarball install
 
 clean:
-	rm -f *.o $(TARBALL) $(BINS)
+	rm -f *.o $(TARBALL) $(SBINS) $(BINS)
 
 tarball: $(TARBALL)
 
