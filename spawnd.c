@@ -57,7 +57,6 @@ int dummy_pipe[2];
 int setup_domain_progress;
 int setup_domain;
 int dont_reap_childs;
-int ctl_socket;
 mqd_t mq;
 
 char *memory_log;
@@ -935,7 +934,6 @@ void fd_to_message(int fd, const char *title) {
 };
 
 int main(int argc, char **argv) {
-	ctl_socket = -1;
 	dont_reap_childs = 0;
 	log_type = LOG_TYPE_MEMORY;
 	memory_log = NULL;
