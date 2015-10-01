@@ -10,7 +10,15 @@ then
 	usage
 fi
 
-echo Stop "$1"
-spawnd-stop "$1"
-echo Start "$1"
-spawnd-start "$1"
+echo -n "Restarting $1... "
+if spawndctl start "$1"
+then
+	while true
+	do
+		STATUS="`spawndctl status "$1" | cut -d '/' -f 2`"
+		test "$STATUS" == ON && break
+	done
+	echo Done
+else
+	echo Failed
+fi

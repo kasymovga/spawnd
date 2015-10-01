@@ -138,6 +138,11 @@ int spawndctl_prepare(int argc, char **argv) {
 		req.u.service.target_status = SERVICE_ON;
 		req.u.service.spawn_pid = 0;
 		snprintf(req.u.service.name, SERVICE_NAME_MAX_LEN, "%s", argv[1]);
+	} else if (!strcmp(argv[0], "restart") && argc == 2) {
+		req.type = REQUEST_TYPE_SERVICE_SET;
+		req.u.service.target_status = SERVICE_RESTART;
+		req.u.service.spawn_pid = 0;
+		snprintf(req.u.service.name, SERVICE_NAME_MAX_LEN, "%s", argv[1]);
 	} else if (!strcmp(argv[0], "stop") && argc == 2) {
 		req.type = REQUEST_TYPE_SERVICE_SET;
 		req.u.service.target_status = SERVICE_OFF;

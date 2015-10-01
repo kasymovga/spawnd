@@ -632,10 +632,13 @@ void services_process() {
 					service->status = SERVICE_OFF;
 					changed = 1;
 				};
-			} else if (service->target_status == SERVICE_OFF) {
-				if (service->status != SERVICE_OFF) {
+			} else if (service->target_status == SERVICE_OFF || service->target_status == SERVICE_RESTART) {
+				if (service->status != SERVICE_OFF && service->target_status != SERVICE_RESTART) {
 					for (j = 0; j < services.n; j++) {
-						if (!service->after_all && service_depend_of(services.i[j], service->name) && services.i[j]->status != SERVICE_OFF) {
+						if (!service->after_all
+								&& service_depend_of(services.i[j], service->name)
+								&& services.i[j]->status != SERVICE_OFF
+								&& services.i[j]->target_status == SERVICE_OFF) {
 							goto continue_1;
 						};
 					};
@@ -659,6 +662,9 @@ void services_process() {
 					};
 				} else if (service->status == SERVICE_POST_STOP && service->script_pid <= 0) {
 					service->status = SERVICE_OFF;
+					if (service->target_status == SERVICE_RESTART) {
+						service->target_status = SERVICE_ON;
+					};
 					message(1, "service %s is disabled\n", service->name);
 					changed = 1;
 				} else if (service->status == SERVICE_START || service->status == SERVICE_POST_START || service->status == SERVICE_FAILED || service->status == SERVICE_RESTART) {
@@ -750,7 +756,7 @@ void request(struct request *req, mqd_t mq_answer) {
 			ERROR_RESPONSE("Internal spawnd error, check log");
 			goto finish;
 		};
-		if (req->u.service.target_status == SERVICE_ON || req->u.service.target_status == SERVICE_OFF) {
+		if (req->u.service.target_status == SERVICE_ON || req->u.service.target_status == SERVICE_OFF || req->u.service.target_status == SERVICE_RESTART) {
 			service->target_status = req->u.service.target_status;
 			goto finish;
 		};
