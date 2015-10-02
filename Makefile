@@ -15,7 +15,7 @@ TARGET=$(NAME)
 TARBALL=$(NAME)-$(VERSION).tar.gz
 DESTDIR?=
 
-SBINS=spawnd spawnd-helper-killall spawnd-helper-logwtmp spawnd-helper-utmplogout
+SBINS=spawnd spawnd-helper-logwtmp spawnd-helper-utmplogout
 BINS=spawndctl
 SCRIPTS=spawnd-start spawnd-stop spawnd-restart spawnd-status spawnd-save spawnd-reboot spawnd-halt spawnd-poweroff spawnd-domain spawnd-domain-show spawnd-domain-add spawnd-domain-delete
 
@@ -29,17 +29,11 @@ spawnd : spawnd.o misc.o
 spawndctl : spawndctl.o misc.o
 	$(LINK) $@ $(SPAWNDCTL_LDFLAGS) $^
 
-spawnd-helper-killall : killthemall.o
-	$(LINK) $@ $^
-
 spawnd-helper-logwtmp : logwtmp.o
 	$(LINK) $@ $(LOGWTMP_LDFALGS) $^
 
 spawnd-helper-utmplogout : utmplogout.o
 	$(LINK) $@ $(LOGWTMP_LDFALGS) $^
-
-killthemall.o : killthemall.c Makefile
-	$(COMP) $@ $<
 
 utmplogout.o : utmplogout.c Makefile
 	$(COMP) $@ $<
@@ -63,7 +57,7 @@ clean:
 
 tarball: $(TARBALL)
 
-$(TARBALL) : $(SCRIPTS) common.h ipc.h config.h spawnd.c spawndctl.c misc.h misc.c killthemall.c logwtmp.c utmplogout.c Makefile AUTHORS COPYING
+$(TARBALL) : $(SCRIPTS) common.h ipc.h config.h spawnd.c spawndctl.c misc.h misc.c logwtmp.c utmplogout.c Makefile AUTHORS COPYING
 	rm -rf $(NAME)-$(VERSION)
 	mkdir -m 755 $(NAME)-$(VERSION)
 	cp $^ $(NAME)-$(VERSION)/
