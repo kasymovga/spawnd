@@ -11,7 +11,7 @@ then
 fi
 
 echo -n "Restarting $1... "
-if spawndctl start "$1"
+if spawndctl restart "$1"
 then
 	while true
 	do
