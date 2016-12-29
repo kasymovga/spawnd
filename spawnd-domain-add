@@ -2,7 +2,7 @@
 SERVICE="$1"
 DOMAIN="$2"
 test -z "$DOMAIN" && DOMAIN=default
-if egrep -v '^$SERVICE$' /etc/spawnd/domains/"$DOMAIN"
+if egrep "^$SERVICE$" /etc/spawnd/domains/"$DOMAIN" > /dev/null
 then
 	echo Already added
 else
